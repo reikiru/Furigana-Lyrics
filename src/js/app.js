@@ -7,11 +7,12 @@
     saveApiConfig,
     savePrefs,
   } = globalThis.Furigana.config;
-  const { annotateLyrics } = globalThis.Furigana.api;
+  const { fetchModels, annotateLyrics } = globalThis.Furigana.api;
   const { rubyHtmlToBracketText } = globalThis.Furigana.ruby;
   const { exportRubyPng } = globalThis.Furigana.exporter;
 
   const $ = (id) => document.getElementById(id);
+  const CUSTOM_MODEL_VALUE = '__custom__';
 
   const els = {
     themeBtns: document.querySelectorAll('[data-theme-pick]'),
@@ -32,10 +33,12 @@
     apiForm: $('api-form'),
     btnCloseModal: $('btn-close-modal'),
     btnCancelModal: $('btn-cancel-modal'),
-    cfgApiKey: $('cfg-api-key'),
-    cfgModelPreset: $('cfg-model-preset'),
-    cfgModelCustom: $('cfg-model-custom'),
     cfgBaseUrl: $('cfg-base-url'),
+    cfgApiKey: $('cfg-api-key'),
+    btnFetchModels: $('btn-fetch-models'),
+    cfgModelSelect: $('cfg-model-select'),
+    cfgModelCustom: $('cfg-model-custom'),
+    modelFetchStatus: $('model-fetch-status'),
 
     lyricsInput: $('lyrics-input'),
     charCount: $('char-count'),
@@ -53,12 +56,12 @@
     toast: $('toast'),
   };
 
-  const PRESET_MODELS = new Set(['deepseek-chat', 'deepseek-reasoner']);
-
   let apiConfig = loadApiConfig();
   let prefs = loadPrefs();
+  let modalModels = [...apiConfig.models];
   let currentHtml = '';
   let activeController = null;
+  let modelFetchController = null;
   let toastTimer = null;
 
   function showToast(msg) {
@@ -75,8 +78,13 @@
     els.statusText.className = 'foot-status' + (state ? ` is-${state}` : '');
   }
 
+  function setModelFetchStatus(msg, state = '') {
+    els.modelFetchStatus.textContent = msg;
+    els.modelFetchStatus.className = 'field-hint' + (state ? ` is-${state}` : '');
+  }
+
   function updateApiIndicator() {
-    els.apiDot.classList.toggle('is-ready', Boolean(apiConfig.apiKey));
+    els.apiDot.classList.toggle('is-ready', Boolean(apiConfig.apiKey && apiConfig.model));
   }
 
   function updateCharCount() {
@@ -107,6 +115,89 @@
     els.outputView.classList.remove('is-empty');
     els.outputView.innerHTML = html;
     setOutputActionsEnabled(Boolean(html.trim()));
+  }
+
+  function renderModelOptions(models, selectedModel) {
+    const select = els.cfgModelSelect;
+    select.innerHTML = '';
+
+    if (models.length === 0) {
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '请先填写 API Key 并拉取模型';
+      select.appendChild(placeholder);
+    } else {
+      for (const id of models) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        select.appendChild(opt);
+      }
+    }
+
+    const customOpt = document.createElement('option');
+    customOpt.value = CUSTOM_MODEL_VALUE;
+    customOpt.textContent = '手动输入模型 ID…';
+    select.appendChild(customOpt);
+
+    if (selectedModel && models.includes(selectedModel)) {
+      select.value = selectedModel;
+      els.cfgModelCustom.hidden = true;
+      els.cfgModelCustom.value = '';
+    } else if (selectedModel) {
+      select.value = CUSTOM_MODEL_VALUE;
+      els.cfgModelCustom.hidden = false;
+      els.cfgModelCustom.value = selectedModel;
+    } else if (models.length > 0) {
+      select.value = models[0];
+      els.cfgModelCustom.hidden = true;
+      els.cfgModelCustom.value = '';
+    } else {
+      select.value = '';
+      els.cfgModelCustom.hidden = true;
+      els.cfgModelCustom.value = '';
+    }
+  }
+
+  async function handleFetchModels({ silentIfEmpty = false } = {}) {
+    const apiKey = els.cfgApiKey.value.trim();
+    const baseUrl = els.cfgBaseUrl.value.trim() || apiConfig.baseUrl;
+
+    if (!apiKey) {
+      if (!silentIfEmpty) setModelFetchStatus('请先填写 API Key 再拉取可用模型', 'error');
+      return;
+    }
+
+    modelFetchController?.abort();
+    modelFetchController = new AbortController();
+
+    els.btnFetchModels.disabled = true;
+    els.btnFetchModels.textContent = '拉取中…';
+    setModelFetchStatus('正在从官方接口拉取可用模型…');
+
+    const prevSelection =
+      els.cfgModelSelect.value === CUSTOM_MODEL_VALUE
+        ? els.cfgModelCustom.value.trim()
+        : els.cfgModelSelect.value || apiConfig.model;
+
+    try {
+      const models = await fetchModels({
+        apiKey,
+        baseUrl,
+        signal: modelFetchController.signal,
+      });
+      modalModels = models;
+      const nextSelected = models.includes(prevSelection) ? prevSelection : models[0];
+      renderModelOptions(models, nextSelected);
+      setModelFetchStatus(`已拉取 ${models.length} 个可用模型`, 'ok');
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setModelFetchStatus(err.message || '拉取模型失败，请检查 Key 或网络', 'error');
+    } finally {
+      modelFetchController = null;
+      els.btnFetchModels.disabled = false;
+      els.btnFetchModels.textContent = '拉取可用模型';
+    }
   }
 
   function applyPrefs() {
@@ -141,21 +232,23 @@
   }
 
   function openApiModal() {
-    els.cfgApiKey.value = apiConfig.apiKey;
     els.cfgBaseUrl.value = apiConfig.baseUrl;
+    els.cfgApiKey.value = apiConfig.apiKey;
+    modalModels = [...apiConfig.models];
+    renderModelOptions(modalModels, apiConfig.model);
 
-    if (PRESET_MODELS.has(apiConfig.model)) {
-      els.cfgModelPreset.value = apiConfig.model;
-      els.cfgModelCustom.hidden = true;
-      els.cfgModelCustom.value = '';
+    if (modalModels.length > 0) {
+      setModelFetchStatus(`当前缓存 ${modalModels.length} 个模型，可点击「拉取可用模型」刷新`);
     } else {
-      els.cfgModelPreset.value = 'custom';
-      els.cfgModelCustom.hidden = false;
-      els.cfgModelCustom.value = apiConfig.model;
+      setModelFetchStatus('填写 API Key 后点击「拉取可用模型」，自动从官方接口同步最新模型列表。');
     }
 
     els.apiModal.showModal();
-    els.cfgApiKey.focus();
+    if (apiConfig.apiKey && modalModels.length === 0) {
+      handleFetchModels({ silentIfEmpty: true });
+    } else if (!apiConfig.apiKey) {
+      els.cfgApiKey.focus();
+    }
   }
 
   async function handleAnnotate() {
@@ -166,8 +259,8 @@
       return;
     }
 
-    if (!apiConfig.apiKey) {
-      setStatus('请先配置 API Key', 'error');
+    if (!apiConfig.apiKey || !apiConfig.model) {
+      setStatus(!apiConfig.apiKey ? '请先配置 API Key' : '请先拉取并选择可用模型', 'error');
       openApiModal();
       return;
     }
@@ -246,30 +339,55 @@
     });
 
     els.btnApiSettings.addEventListener('click', openApiModal);
-    els.btnCloseModal.addEventListener('click', () => els.apiModal.close());
-    els.btnCancelModal.addEventListener('click', () => els.apiModal.close());
+    els.btnCloseModal.addEventListener('click', () => {
+      modelFetchController?.abort();
+      els.apiModal.close();
+    });
+    els.btnCancelModal.addEventListener('click', () => {
+      modelFetchController?.abort();
+      els.apiModal.close();
+    });
 
-    els.cfgModelPreset.addEventListener('change', () => {
-      const isCustom = els.cfgModelPreset.value === 'custom';
+    els.btnFetchModels.addEventListener('click', () => handleFetchModels());
+    els.cfgApiKey.addEventListener('change', () => {
+      if (els.cfgApiKey.value.trim()) {
+        handleFetchModels({ silentIfEmpty: true });
+      }
+    });
+
+    els.cfgModelSelect.addEventListener('change', () => {
+      const isCustom = els.cfgModelSelect.value === CUSTOM_MODEL_VALUE;
       els.cfgModelCustom.hidden = !isCustom;
       if (isCustom) els.cfgModelCustom.focus();
     });
 
     els.apiForm.addEventListener('submit', (e) => {
       e.preventDefault();
+      const apiKey = els.cfgApiKey.value.trim();
       const model =
-        els.cfgModelPreset.value === 'custom'
-          ? els.cfgModelCustom.value.trim() || 'deepseek-chat'
-          : els.cfgModelPreset.value;
+        els.cfgModelSelect.value === CUSTOM_MODEL_VALUE
+          ? els.cfgModelCustom.value.trim()
+          : els.cfgModelSelect.value.trim();
+
+      if (!apiKey) {
+        setModelFetchStatus('请先填写 API Key', 'error');
+        els.cfgApiKey.focus();
+        return;
+      }
+      if (!model) {
+        setModelFetchStatus('请先拉取并选择可用模型，或切换到「手动输入模型 ID」', 'error');
+        return;
+      }
 
       apiConfig = saveApiConfig({
-        apiKey: els.cfgApiKey.value,
+        apiKey,
         model,
         baseUrl: els.cfgBaseUrl.value,
+        models: modalModels,
       });
       updateApiIndicator();
       els.apiModal.close();
-      showToast('API 设置已保存');
+      showToast(`已保存设置（${apiConfig.model}）`);
     });
 
     els.lyricsInput.addEventListener('input', updateCharCount);

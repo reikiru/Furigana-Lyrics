@@ -544,9 +544,24 @@ textarea {
   border-color: var(--accent);
 }
 
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .field-hint {
   font-size: 0.76rem;
   color: var(--text-muted);
+}
+
+.field-hint.is-ok {
+  color: var(--ok);
+}
+
+.field-hint.is-error {
+  color: var(--danger);
 }
 
 .model-row {

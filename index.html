@@ -123,26 +123,29 @@
 
       <div class="modal-body">
         <div class="field">
-          <label for="cfg-api-key">API Key</label>
-          <input type="password" id="cfg-api-key" placeholder="sk-..." autocomplete="off">
-          <p class="field-hint">仅保存在当前浏览器的 localStorage 中，直接请求接口，不经过任何中转。</p>
+          <label for="cfg-base-url">API Base URL</label>
+          <input type="url" id="cfg-base-url" placeholder="https://api.deepseek.com/v1">
         </div>
 
         <div class="field">
-          <label for="cfg-model">模型</label>
+          <label for="cfg-api-key">API Key</label>
+          <input type="password" id="cfg-api-key" placeholder="sk-..." autocomplete="off">
+          <p class="field-hint">仅保存在当前浏览器的 localStorage 中，直接请求官方接口，不经过任何中转。</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label-row">
+            <label for="cfg-model-select">可用模型</label>
+            <button type="button" class="text-btn accent" id="btn-fetch-models">拉取可用模型</button>
+          </div>
           <div class="model-row">
-            <select id="cfg-model-preset">
-              <option value="deepseek-chat">deepseek-chat（推荐 / 快）</option>
-              <option value="deepseek-reasoner">deepseek-reasoner（深度推理）</option>
-              <option value="custom">自定义模型名…</option>
+            <select id="cfg-model-select">
+              <option value="">请先填写 API Key 并拉取模型</option>
+              <option value="__custom__">手动输入模型 ID…</option>
             </select>
             <input type="text" id="cfg-model-custom" placeholder="输入模型 ID" hidden>
           </div>
-        </div>
-
-        <div class="field">
-          <label for="cfg-base-url">API Base URL</label>
-          <input type="url" id="cfg-base-url" placeholder="https://api.deepseek.com/v1">
+          <p class="field-hint" id="model-fetch-status">填写 API Key 后点击「拉取可用模型」，自动从官方接口同步最新模型列表。</p>
         </div>
       </div>
 

@@ -6,8 +6,9 @@
 
   const DEFAULT_API_CONFIG = {
     apiKey: '',
-    model: 'deepseek-chat',
+    model: '',
     baseUrl: 'https://api.deepseek.com/v1',
+    models: [],
   };
 
   const DEFAULT_PREFS = {
@@ -37,16 +38,25 @@
   }
 
   function loadApiConfig() {
-    return readJson(API_KEY_STORAGE, DEFAULT_API_CONFIG);
+    const cfg = readJson(API_KEY_STORAGE, DEFAULT_API_CONFIG);
+    return {
+      ...cfg,
+      models: Array.isArray(cfg.models) ? cfg.models : [],
+    };
   }
 
   function saveApiConfig(next) {
+    const models = Array.isArray(next.models)
+      ? [...new Set(next.models.map((m) => String(m).trim()).filter(Boolean))]
+      : [];
+
     const merged = {
       ...DEFAULT_API_CONFIG,
       ...next,
       baseUrl: (next.baseUrl || DEFAULT_API_CONFIG.baseUrl).trim().replace(/\/+$/, ''),
-      model: (next.model || DEFAULT_API_CONFIG.model).trim(),
+      model: (next.model || '').trim(),
       apiKey: (next.apiKey || '').trim(),
+      models,
     };
     localStorage.setItem(API_KEY_STORAGE, JSON.stringify(merged));
     return merged;

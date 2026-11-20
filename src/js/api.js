@@ -13,6 +13,48 @@
   ].join('\n');
 
   /**
+   * Fetch available model IDs from an OpenAI-compatible `/models` endpoint (e.g. DeepSeek API).
+   */
+  async function fetchModels({ apiKey, baseUrl, signal }) {
+    const cleanKey = (apiKey || '').trim();
+    const cleanBase = (baseUrl || '').trim().replace(/\/+$/, '');
+    if (!cleanKey) throw new Error('请先填写 API Key');
+    if (!cleanBase) throw new Error('请先填写 API Base URL');
+
+    const response = await fetch(`${cleanBase}/models`, {
+      method: 'GET',
+      signal,
+      headers: {
+        Authorization: `Bearer ${cleanKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const errData = await response.json();
+        message = errData?.error?.message || errData?.message || message;
+      } catch {
+        // keep status code fallback
+      }
+      throw new Error(`拉取模型失败：${message}`);
+    }
+
+    const payload = await response.json();
+    const list = Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.models)
+        ? payload.models
+        : [];
+
+    const ids = [...new Set(list.map((item) => (typeof item === 'string' ? item : item?.id)).filter(Boolean))].sort();
+    if (ids.length === 0) {
+      throw new Error('接口未返回任何可用模型，可改用「手动输入模型 ID」');
+    }
+    return ids;
+  }
+
+  /**
    * Call an OpenAI-compatible chat completions endpoint with streaming support.
    * Invokes `onChunk(sanitizedHtml)` as tokens arrive, and returns the final sanitized HTML.
    */
@@ -108,5 +150,5 @@
     return finalHtml;
   }
 
-  Furigana.api = { annotateLyrics };
+  Furigana.api = { fetchModels, annotateLyrics };
 })();
