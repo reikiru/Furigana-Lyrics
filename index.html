@@ -58,13 +58,14 @@
 
   <main class="workspace" id="workspace">
     <!-- Left: Input Panel -->
-    <section class="pane pane-input" aria-label="歌词输入">
+    <section class="pane pane-input" id="pane-input" aria-label="歌词输入">
       <div class="pane-head">
         <span class="pane-title">歌词原文</span>
         <div class="pane-tools">
           <span class="meta-count" id="char-count">0 字</span>
           <button type="button" class="text-btn" id="btn-sample">示例</button>
           <button type="button" class="text-btn" id="btn-clear">清空</button>
+          <button type="button" class="text-btn" id="btn-collapse-input" title="收起原文栏 (⌘\)">收起</button>
         </div>
       </div>
 
@@ -90,7 +91,10 @@
     <!-- Right: Output Panel -->
     <section class="pane pane-output" aria-label="标注结果">
       <div class="pane-head">
-        <span class="pane-title">注音预览</span>
+        <div class="pane-title-group">
+          <button type="button" class="text-btn accent" id="btn-expand-input" title="展开原文栏 (⌘\)" hidden>展开原文</button>
+          <span class="pane-title">注音预览</span>
+        </div>
         <div class="pane-tools">
           <label class="toggle-ruby" title="切换假名显示，方便自测读音">
             <input type="checkbox" id="opt-show-ruby" checked>

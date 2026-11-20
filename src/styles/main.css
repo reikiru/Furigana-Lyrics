@@ -210,6 +210,19 @@ textarea {
   min-height: 0;
 }
 
+.workspace.is-input-collapsed {
+  grid-template-columns: minmax(0, clamp(560px, calc(var(--workspace-max-width) * 0.72), 920px));
+  justify-content: center;
+}
+
+.workspace.is-input-collapsed .pane-input {
+  display: none;
+}
+
+.workspace.is-input-collapsed .output-stage {
+  padding: 36px 48px;
+}
+
 .pane {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -229,6 +242,12 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
+}
+
+.pane-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .pane-title {

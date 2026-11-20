@@ -40,6 +40,10 @@
     cfgModelCustom: $('cfg-model-custom'),
     modelFetchStatus: $('model-fetch-status'),
 
+    workspace: $('workspace'),
+    btnCollapseInput: $('btn-collapse-input'),
+    btnExpandInput: $('btn-expand-input'),
+
     lyricsInput: $('lyrics-input'),
     charCount: $('char-count'),
     btnSample: $('btn-sample'),
@@ -229,6 +233,10 @@
 
     els.optShowRuby.checked = prefs.showRuby;
     els.outputView.classList.toggle('hide-ruby', !prefs.showRuby);
+
+    const collapsed = Boolean(prefs.inputCollapsed);
+    els.workspace.classList.toggle('is-input-collapsed', collapsed);
+    els.btnExpandInput.hidden = !collapsed;
   }
 
   function openApiModal() {
@@ -410,6 +418,21 @@
       renderEmptyOutput();
       setStatus('就绪');
       els.lyricsInput.focus();
+    });
+
+    function setInputCollapsed(collapsed) {
+      prefs = savePrefs({ ...prefs, inputCollapsed: collapsed });
+      applyPrefs();
+      if (!collapsed) els.lyricsInput.focus();
+    }
+
+    els.btnCollapseInput.addEventListener('click', () => setInputCollapsed(true));
+    els.btnExpandInput.addEventListener('click', () => setInputCollapsed(false));
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault();
+        setInputCollapsed(!prefs.inputCollapsed);
+      }
     });
 
     els.btnAnnotate.addEventListener('click', handleAnnotate);

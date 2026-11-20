@@ -18,6 +18,7 @@
     maxWidth: 1080,
     customBg: '',
     showRuby: true,
+    inputCollapsed: false,
   };
 
   const SAMPLE_LYRICS = `夢を見たんだ
