@@ -1,0 +1,37 @@
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (rel) => readFileSync(resolve(root, rel), 'utf8');
+
+const stripModuleSyntax = (code) =>
+  code
+    .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
+    .replace(/^export\s+(?=(?:async\s+)?(?:function|const|let|class)\b)/gm, '');
+
+const css = [read('src/styles/tokens.css'), read('src/styles/main.css')].join('\n\n');
+const js = [
+  read('src/js/config.js'),
+  read('src/js/ruby.js'),
+  read('src/js/api.js'),
+  read('src/js/exporter.js'),
+  read('src/js/app.js'),
+]
+  .map(stripModuleSyntax)
+  .join('\n\n');
+
+const html = read('index.html')
+  .replace(
+    /<link rel="stylesheet" href="\.\/src\/styles\/tokens\.css">\s*<link rel="stylesheet" href="\.\/src\/styles\/main\.css">/,
+    `<style>\n${css}\n</style>`
+  )
+  .replace(
+    /<script type="module" src="\.\/src\/js\/app\.js"><\/script>/,
+    `<script>\n(() => {\n${js}\n})();\n</script>`
+  );
+
+mkdirSync(resolve(root, 'dist'), { recursive: true });
+const outPath = resolve(root, 'dist/furigana.html');
+writeFileSync(outPath, html, 'utf8');
+console.log(`Built standalone HTML -> ${outPath}`);

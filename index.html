@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="washi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Furigana Lyrics — 日语歌词注音</title>
+  <link rel="stylesheet" href="./src/styles/tokens.css">
+  <link rel="stylesheet" href="./src/styles/main.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">振</span>
+      <div class="brand-text">
+        <h1>Furigana Lyrics</h1>
+        <p>日语歌词自动假名标注</p>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="theme-group" role="group" aria-label="主题切换">
+        <button type="button" class="chip-btn" data-theme-pick="washi">和纸</button>
+        <button type="button" class="chip-btn" data-theme-pick="paper">素白</button>
+        <button type="button" class="chip-btn" data-theme-pick="ink">墨夜</button>
+      </div>
+      <button type="button" class="icon-btn" id="btn-typography" aria-expanded="false" aria-controls="typography-bar">
+        排版
+      </button>
+      <button type="button" class="icon-btn" id="btn-api-settings">
+        API 设置
+        <span class="status-dot" id="api-dot" aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="typography-bar" id="typography-bar" hidden>
+    <div class="typo-item">
+      <label for="opt-font-size">字号</label>
+      <input type="range" id="opt-font-size" min="15" max="30" step="1">
+      <span class="typo-val" id="val-font-size">20px</span>
+    </div>
+    <div class="typo-item">
+      <label for="opt-line-height">行距</label>
+      <input type="range" id="opt-line-height" min="18" max="36" step="1">
+      <span class="typo-val" id="val-line-height">2.6</span>
+    </div>
+    <div class="typo-item">
+      <label for="opt-max-width">版心</label>
+      <input type="range" id="opt-max-width" min="760" max="1360" step="20">
+      <span class="typo-val" id="val-max-width">1080px</span>
+    </div>
+    <div class="typo-item">
+      <label for="opt-bg-color">自定义底色</label>
+      <input type="color" id="opt-bg-color" title="自定义背景色">
+      <button type="button" class="text-btn" id="btn-reset-typo">重置</button>
+    </div>
+  </section>
+
+  <main class="workspace" id="workspace">
+    <!-- Left: Input Panel -->
+    <section class="pane pane-input" aria-label="歌词输入">
+      <div class="pane-head">
+        <span class="pane-title">歌词原文</span>
+        <div class="pane-tools">
+          <span class="meta-count" id="char-count">0 字</span>
+          <button type="button" class="text-btn" id="btn-sample">示例</button>
+          <button type="button" class="text-btn" id="btn-clear">清空</button>
+        </div>
+      </div>
+
+      <textarea
+        id="lyrics-input"
+        class="lyrics-editor"
+        spellcheck="false"
+        placeholder="在此粘贴日语歌词或段落…&#10;支持 ⌘ + Enter 快速开始标注"
+      ></textarea>
+
+      <div class="pane-foot">
+        <div class="foot-status" id="status-text">就绪</div>
+        <div class="foot-actions">
+          <button type="button" class="btn-secondary" id="btn-cancel" hidden>停止</button>
+          <button type="button" class="btn-primary" id="btn-annotate">
+            <span class="btn-label">标注假名</span>
+            <kbd class="shortcut">⌘↵</kbd>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: Output Panel -->
+    <section class="pane pane-output" aria-label="标注结果">
+      <div class="pane-head">
+        <span class="pane-title">注音预览</span>
+        <div class="pane-tools">
+          <label class="toggle-ruby" title="切换假名显示，方便自测读音">
+            <input type="checkbox" id="opt-show-ruby" checked>
+            <span>显示假名</span>
+          </label>
+          <button type="button" class="text-btn" id="btn-copy-text" disabled>复制文本</button>
+          <button type="button" class="text-btn" id="btn-copy-html" disabled>复制 HTML</button>
+          <button type="button" class="text-btn accent" id="btn-export-png" disabled>导出 PNG</button>
+        </div>
+      </div>
+
+      <div class="output-stage">
+        <article id="output-view" class="ruby-canvas is-empty" aria-live="polite">
+          <div class="empty-hint">
+            <p class="empty-jp"><ruby>振<rt>ふ</rt></ruby>り<ruby>仮名<rt>がな</rt></ruby></p>
+            <p class="empty-desc">在左侧输入日语歌词，点击「标注假名」即可生成</p>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <!-- API Settings Dialog -->
+  <dialog class="modal" id="api-modal" aria-labelledby="modal-title">
+    <form method="dialog" class="modal-card" id="api-form">
+      <div class="modal-head">
+        <h2 id="modal-title">API 设置</h2>
+        <button type="button" class="modal-close" id="btn-close-modal" aria-label="关闭">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="field">
+          <label for="cfg-api-key">API Key</label>
+          <input type="password" id="cfg-api-key" placeholder="sk-..." autocomplete="off">
+          <p class="field-hint">仅保存在当前浏览器的 localStorage 中，直接请求接口，不经过任何中转。</p>
+        </div>
+
+        <div class="field">
+          <label for="cfg-model">模型</label>
+          <div class="model-row">
+            <select id="cfg-model-preset">
+              <option value="deepseek-chat">deepseek-chat（推荐 / 快）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（深度推理）</option>
+              <option value="custom">自定义模型名…</option>
+            </select>
+            <input type="text" id="cfg-model-custom" placeholder="输入模型 ID" hidden>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="cfg-base-url">API Base URL</label>
+          <input type="url" id="cfg-base-url" placeholder="https://api.deepseek.com/v1">
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn-secondary" id="btn-cancel-modal">取消</button>
+        <button type="submit" class="btn-primary">保存设置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="./src/js/app.js"></script>
+</body>
+</html>
