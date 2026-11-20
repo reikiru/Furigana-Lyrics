@@ -5,11 +5,6 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(resolve(root, rel), 'utf8');
 
-const stripModuleSyntax = (code) =>
-  code
-    .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-    .replace(/^export\s+(?=(?:async\s+)?(?:function|const|let|class)\b)/gm, '');
-
 const css = [read('src/styles/tokens.css'), read('src/styles/main.css')].join('\n\n');
 const js = [
   read('src/js/config.js'),
@@ -17,9 +12,7 @@ const js = [
   read('src/js/api.js'),
   read('src/js/exporter.js'),
   read('src/js/app.js'),
-]
-  .map(stripModuleSyntax)
-  .join('\n\n');
+].join('\n\n');
 
 const html = read('index.html')
   .replace(
@@ -27,8 +20,8 @@ const html = read('index.html')
     `<style>\n${css}\n</style>`
   )
   .replace(
-    /<script type="module" src="\.\/src\/js\/app\.js"><\/script>/,
-    `<script>\n(() => {\n${js}\n})();\n</script>`
+    /(?:\s*<script defer src="\.\/src\/js\/[^"]+"><\/script>)+/,
+    `\n  <script>\n${js}\n  </script>`
   );
 
 mkdirSync(resolve(root, 'dist'), { recursive: true });

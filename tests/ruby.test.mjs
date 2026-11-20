@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import '../src/js/ruby.js';
+
+const {
   stripCodeFence,
   sanitizeRubyHtml,
   parseRubyLines,
   rubyHtmlToBracketText,
-} from '../src/js/ruby.js';
+} = globalThis.Furigana.ruby;
 
 test('stripCodeFence removes markdown html fences', () => {
   assert.equal(stripCodeFence('```html\n<ruby>夢<rt>ゆめ</rt></ruby>\n```'), '<ruby>夢<rt>ゆめ</rt></ruby>');
