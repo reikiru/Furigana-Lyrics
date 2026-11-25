@@ -1,6 +1,6 @@
 (() => {
   const Furigana = (globalThis.Furigana = globalThis.Furigana || {});
-  const ALLOWED_TAGS = new Set(['ruby', 'rt', 'br']);
+  const ALLOWED_TAGS = new Set(['ruby', 'rt', 'br', 'p']);
 
   function escapeHtml(text) {
     return text
@@ -29,7 +29,7 @@
   }
 
   /**
-   * Sanitize LLM HTML output: only allow bare <ruby>, <rt>, and <br> tags.
+   * Sanitize LLM HTML output: only allow bare <ruby>, <rt>, <br>, and <p> tags.
    * All other tags and attributes are escaped.
    */
   function sanitizeRubyHtml(raw) {
@@ -45,43 +45,46 @@
   }
 
   /**
-   * Parse sanitized ruby HTML into an array of lines.
-   * Each line is an array of segments:
+   * Parse a single line of ruby HTML into segments:
    *   { type: 'text', text: string } | { type: 'ruby', base: string, rt: string }
+   */
+  function parseRubySegments(line) {
+    const segments = [];
+    const tokenRe = /<ruby>([\s\S]*?)<\/ruby>/gi;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = tokenRe.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        segments.push({ type: 'text', text: decodeEntities(line.slice(lastIndex, match.index)) });
+      }
+      const inner = match[1];
+      const rtParts = [];
+      const base = inner.replace(/<rt>([\s\S]*?)<\/rt>/gi, (_, rtText) => {
+        rtParts.push(decodeEntities(rtText));
+        return '';
+      });
+      const cleanBase = decodeEntities(base.replace(/<[^>]+>/g, ''));
+      const cleanRt = rtParts.join('');
+      if (cleanBase) {
+        segments.push({ type: 'ruby', base: cleanBase, rt: cleanRt });
+      }
+      lastIndex = tokenRe.lastIndex;
+    }
+
+    if (lastIndex < line.length) {
+      segments.push({ type: 'text', text: decodeEntities(line.slice(lastIndex)) });
+    }
+    return segments;
+  }
+
+  /**
+   * Parse sanitized ruby HTML into an array of lines (legacy ruby-only helper).
    */
   function parseRubyLines(html) {
     const normalized = html.replace(/\r\n/g, '\n').replace(/<br\s*\/?>/gi, '\n');
     const rawLines = normalized.split('\n');
-
-    const lines = rawLines.map((line) => {
-      const segments = [];
-      const tokenRe = /<ruby>([\s\S]*?)<\/ruby>/gi;
-      let lastIndex = 0;
-      let match;
-
-      while ((match = tokenRe.exec(line)) !== null) {
-        if (match.index > lastIndex) {
-          segments.push({ type: 'text', text: decodeEntities(line.slice(lastIndex, match.index)) });
-        }
-        const inner = match[1];
-        const rtParts = [];
-        const base = inner.replace(/<rt>([\s\S]*?)<\/rt>/gi, (_, rtText) => {
-          rtParts.push(decodeEntities(rtText));
-          return '';
-        });
-        const cleanBase = decodeEntities(base.replace(/<[^>]+>/g, ''));
-        const cleanRt = rtParts.join('');
-        if (cleanBase) {
-          segments.push({ type: 'ruby', base: cleanBase, rt: cleanRt });
-        }
-        lastIndex = tokenRe.lastIndex;
-      }
-
-      if (lastIndex < line.length) {
-        segments.push({ type: 'text', text: decodeEntities(line.slice(lastIndex)) });
-      }
-      return segments;
-    });
+    const lines = rawLines.map(parseRubySegments);
 
     while (lines.length > 1 && lines[lines.length - 1].length === 0) {
       lines.pop();
@@ -90,12 +93,105 @@
   }
 
   /**
-   * Convert ruby HTML to plain text with parenthesized readings, e.g. 夢(ゆめ).
+   * Parse sanitized ruby + translation HTML into structured blocks:
+   *   { type: 'lyric', segments: Array, translation: string } | { type: 'blank' }
+   * Supports both closed <p>...</p> and partial unclosed streaming <p>... tags.
    */
-  function rubyHtmlToBracketText(html) {
-    return parseRubyLines(html)
-      .map((line) =>
-        line
+  function parseLyricsBlocks(html) {
+    const normalized = html.replace(/\r\n/g, '\n').replace(/<br\s*\/?>/gi, '\n');
+    const blocks = [];
+    const pRe = /<p>([\s\S]*?)(?:<\/p>|$)/gi;
+    let lastIndex = 0;
+    let afterP = false;
+    let match;
+
+    function pushTextChunk(chunk, hasFollowingP) {
+      if (!chunk) return;
+      let lines = chunk.split('\n');
+
+      // A single newline immediately after </p> separates the previous entry from the next line.
+      if (afterP && lines.length > 1 && lines[0].trim() === '') {
+        lines.shift();
+      }
+      // A single newline immediately before <p> separates the lyric line from its own translation.
+      if (hasFollowingP && lines.length > 1 && lines[lines.length - 1].trim() === '') {
+        lines.pop();
+      }
+
+      for (const rawLine of lines) {
+        if (rawLine.trim() === '') {
+          blocks.push({ type: 'blank' });
+        } else {
+          blocks.push({
+            type: 'lyric',
+            segments: parseRubySegments(rawLine),
+            translation: '',
+          });
+        }
+      }
+    }
+
+    while ((match = pRe.exec(normalized)) !== null) {
+      const before = normalized.slice(lastIndex, match.index);
+      pushTextChunk(before, true);
+
+      const transText = decodeEntities(match[1].replace(/<[^>]+>/g, '')).trim();
+      const prev = blocks[blocks.length - 1];
+      if (prev && prev.type === 'lyric' && !prev.translation) {
+        prev.translation = transText;
+      } else if (transText) {
+        blocks.push({ type: 'lyric', segments: [], translation: transText });
+      }
+
+      lastIndex = pRe.lastIndex;
+      afterP = true;
+    }
+
+    if (lastIndex < normalized.length) {
+      pushTextChunk(normalized.slice(lastIndex), false);
+    }
+
+    while (blocks.length > 0 && blocks[blocks.length - 1].type === 'blank') {
+      blocks.pop();
+    }
+    return blocks;
+  }
+
+  /**
+   * Render structured HTML for DOM display or HTML clipboard export.
+   */
+  function renderLyricsHtml(html, { showTranslation = true } = {}) {
+    const blocks = parseLyricsBlocks(html);
+    return blocks
+      .map((block) => {
+        if (block.type === 'blank') {
+          return '<div class="lyric-blank" aria-hidden="true"></div>';
+        }
+        const jpHtml = block.segments
+          .map((seg) =>
+            seg.type === 'ruby'
+              ? `<ruby>${escapeHtml(seg.base)}<rt>${escapeHtml(seg.rt)}</rt></ruby>`
+              : escapeHtml(seg.text)
+          )
+          .join('');
+        const transHtml =
+          showTranslation && block.translation
+            ? `<div class="lyric-trans">${escapeHtml(block.translation)}</div>`
+            : '';
+        return `<div class="lyric-entry"><div class="lyric-jp">${jpHtml}</div>${transHtml}</div>`;
+      })
+      .join('');
+  }
+
+  /**
+   * Convert ruby HTML to plain text with parenthesized readings, e.g. 夢(ゆめ).
+   * Includes Chinese translation lines when `showTranslation` is true.
+   */
+  function rubyHtmlToBracketText(html, { showTranslation = true } = {}) {
+    return parseLyricsBlocks(html)
+      .map((block) => {
+        if (block.type === 'blank') return '';
+        const jp = block.segments
           .map((seg) =>
             seg.type === 'ruby' && seg.rt
               ? `${seg.base}(${seg.rt})`
@@ -103,8 +199,12 @@
                 ? seg.base
                 : seg.text
           )
-          .join('')
-      )
+          .join('');
+        if (showTranslation && block.translation) {
+          return jp ? `${jp}\n${block.translation}` : block.translation;
+        }
+        return jp;
+      })
       .join('\n');
   }
 
@@ -112,6 +212,8 @@
     stripCodeFence,
     sanitizeRubyHtml,
     parseRubyLines,
+    parseLyricsBlocks,
+    renderLyricsHtml,
     rubyHtmlToBracketText,
   };
 })();

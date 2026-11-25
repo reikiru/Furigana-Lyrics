@@ -18,6 +18,8 @@
     maxWidth: 1080,
     customBg: '',
     showRuby: true,
+    enableTranslation: true,
+    showTranslation: true,
     inputCollapsed: false,
   };
 

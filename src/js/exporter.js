@@ -2,12 +2,15 @@
   const Furigana = (globalThis.Furigana = globalThis.Furigana || {});
 
   /**
-   * Render annotated ruby HTML to a crisp Retina PNG and trigger download.
+   * Render annotated ruby + optional translation HTML to a crisp Retina PNG and trigger download.
    */
   function exportRubyPng(outputEl, options = {}) {
-    const { parseRubyLines } = Furigana.ruby;
-    const lines = parseRubyLines(outputEl.innerHTML);
-    const hasContent = lines.some((line) => line.length > 0);
+    const { parseLyricsBlocks } = Furigana.ruby;
+    const sourceHtml = typeof options.rawHtml === 'string' ? options.rawHtml : outputEl.innerHTML;
+    const blocks = parseLyricsBlocks(sourceHtml);
+    const hasContent = blocks.some(
+      (b) => b.type === 'lyric' && (b.segments.length > 0 || b.translation)
+    );
     if (!hasContent) {
       throw new Error('没有可导出的标注内容');
     }
@@ -19,14 +22,23 @@
     const lineHeightPx = parseFloat(cs.lineHeight) || baseSize * 2.6;
     const rubySize = Math.round(baseSize * 0.54);
     const rubyGap = Math.max(3, Math.round(baseSize * 0.16));
+    const transSize = Math.max(12, Math.round(baseSize * 0.72));
+    const transLineStep = Math.round(transSize * 1.55);
+    const transTopGap = Math.max(6, Math.round(baseSize * 0.38));
+    const entryBottomGap = Math.max(10, Math.round(baseSize * 0.55));
+
     const showRuby = options.showRuby ?? !outputEl.classList.contains('hide-ruby');
+    const showTranslation =
+      options.showTranslation ?? !outputEl.classList.contains('hide-translation');
 
     const bgColor = options.bgColor || rootCs.getPropertyValue('--bg-surface').trim() || '#fffdf8';
     const textColor = rootCs.getPropertyValue('--text-primary').trim() || '#2f2419';
     const rubyColor = rootCs.getPropertyValue('--ruby-color').trim() || '#b45d19';
+    const transColor = rootCs.getPropertyValue('--text-secondary').trim() || '#756453';
 
     const baseFont = `400 ${baseSize}px "Hiragino Mincho ProN", "YuMincho", "Noto Serif JP", serif`;
     const rubyFont = `400 ${rubySize}px "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif`;
+    const transFont = `400 ${transSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans", sans-serif`;
 
     const paddingX = 52;
     const paddingY = 48;
@@ -34,22 +46,49 @@
 
     const measureCtx = document.createElement('canvas').getContext('2d');
 
-    const wrappedLines = [];
-    for (const line of lines) {
-      if (line.length === 0) {
-        wrappedLines.push([]);
+    function wrapPlainText(text, font) {
+      measureCtx.font = font;
+      const lines = [];
+      let current = '';
+      let currentW = 0;
+      for (const ch of text) {
+        const w = measureCtx.measureText(ch).width;
+        if (current && currentW + w > maxContentWidth) {
+          lines.push(current);
+          current = ch;
+          currentW = w;
+        } else {
+          current += ch;
+          currentW += w;
+        }
+      }
+      if (current) lines.push(current);
+      return lines;
+    }
+
+    const renderRows = [];
+    for (const block of blocks) {
+      if (block.type === 'blank') {
+        renderRows.push({ type: 'blank' });
         continue;
       }
 
       const units = [];
-      for (const seg of line) {
+      for (const seg of block.segments) {
         if (seg.type === 'ruby') {
           measureCtx.font = baseFont;
           const baseW = measureCtx.measureText(seg.base).width;
           measureCtx.font = rubyFont;
           const rubyW = showRuby && seg.rt ? measureCtx.measureText(seg.rt).width : 0;
           const cellW = Math.max(baseW, rubyW);
-          units.push({ type: 'ruby', base: seg.base, rt: showRuby ? seg.rt : '', baseW, rubyW, cellW });
+          units.push({
+            type: 'ruby',
+            base: seg.base,
+            rt: showRuby ? seg.rt : '',
+            baseW,
+            rubyW,
+            cellW,
+          });
         } else {
           measureCtx.font = baseFont;
           for (const ch of seg.text) {
@@ -59,26 +98,52 @@
         }
       }
 
+      const jpWrapped = [];
       let current = [];
       let currentW = 0;
       for (const unit of units) {
         if (current.length > 0 && currentW + unit.cellW > maxContentWidth) {
-          wrappedLines.push(current);
+          jpWrapped.push(current);
           current = [];
           currentW = 0;
         }
         current.push(unit);
         currentW += unit.cellW;
       }
-      if (current.length > 0) wrappedLines.push(current);
+      if (current.length > 0) jpWrapped.push(current);
+
+      const transLines =
+        showTranslation && block.translation ? wrapPlainText(block.translation, transFont) : [];
+
+      for (let i = 0; i < jpWrapped.length; i++) {
+        renderRows.push({
+          type: 'jp',
+          units: jpWrapped[i],
+          hasFollowingTrans: i === jpWrapped.length - 1 && transLines.length > 0,
+        });
+      }
+
+      for (let i = 0; i < transLines.length; i++) {
+        renderRows.push({
+          type: 'trans',
+          text: transLines[i],
+          isLastTrans: i === transLines.length - 1,
+        });
+      }
     }
 
     const rowStep = Math.max(lineHeightPx, baseSize + rubySize + rubyGap + 14);
     const blankRowStep = Math.round(rowStep * 0.55);
 
     let contentHeight = 0;
-    for (const row of wrappedLines) {
-      contentHeight += row.length === 0 ? blankRowStep : rowStep;
+    for (const row of renderRows) {
+      if (row.type === 'blank') {
+        contentHeight += blankRowStep;
+      } else if (row.type === 'jp') {
+        contentHeight += row.hasFollowingTrans ? transTopGap + transSize : rowStep;
+      } else {
+        contentHeight += row.isLastTrans ? rowStep : transLineStep;
+      }
     }
 
     const logicalWidth = maxContentWidth + paddingX * 2;
@@ -97,33 +162,40 @@
     ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     let cursorY = paddingY + rubySize + rubyGap + baseSize;
-    for (const row of wrappedLines) {
-      if (row.length === 0) {
+    for (const row of renderRows) {
+      if (row.type === 'blank') {
         cursorY += blankRowStep;
         continue;
       }
-      let cursorX = paddingX;
-      for (const unit of row) {
-        if (unit.type === 'text') {
-          ctx.font = baseFont;
-          ctx.fillStyle = textColor;
-          ctx.fillText(unit.text, cursorX, cursorY);
-        } else {
-          const baseX = cursorX + (unit.cellW - unit.baseW) / 2;
-          ctx.font = baseFont;
-          ctx.fillStyle = textColor;
-          ctx.fillText(unit.base, baseX, cursorY);
+      if (row.type === 'jp') {
+        let cursorX = paddingX;
+        for (const unit of row.units) {
+          if (unit.type === 'text') {
+            ctx.font = baseFont;
+            ctx.fillStyle = textColor;
+            ctx.fillText(unit.text, cursorX, cursorY);
+          } else {
+            const baseX = cursorX + (unit.cellW - unit.baseW) / 2;
+            ctx.font = baseFont;
+            ctx.fillStyle = textColor;
+            ctx.fillText(unit.base, baseX, cursorY);
 
-          if (unit.rt) {
-            const rubyX = cursorX + (unit.cellW - unit.rubyW) / 2;
-            ctx.font = rubyFont;
-            ctx.fillStyle = rubyColor;
-            ctx.fillText(unit.rt, rubyX, cursorY - baseSize - rubyGap);
+            if (unit.rt) {
+              const rubyX = cursorX + (unit.cellW - unit.rubyW) / 2;
+              ctx.font = rubyFont;
+              ctx.fillStyle = rubyColor;
+              ctx.fillText(unit.rt, rubyX, cursorY - baseSize - rubyGap);
+            }
           }
+          cursorX += unit.cellW;
         }
-        cursorX += unit.cellW;
+        cursorY += row.hasFollowingTrans ? transTopGap + transSize : rowStep;
+      } else {
+        ctx.font = transFont;
+        ctx.fillStyle = transColor;
+        ctx.fillText(row.text, paddingX, cursorY);
+        cursorY += row.isLastTrans ? rowStep : transLineStep;
       }
-      cursorY += rowStep;
     }
 
     canvas.toBlob((blob) => {

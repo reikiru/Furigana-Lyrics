@@ -1,15 +1,31 @@
 (() => {
   const Furigana = (globalThis.Furigana = globalThis.Furigana || {});
 
-  const SYSTEM_PROMPT = [
-    'Annotate Japanese lyrics with HTML ruby tags. Return ONLY the annotated HTML, nothing else.',
-    '',
+  const BASE_RUBY_RULES = [
     '- Wrap every kanji or kanji compound in <ruby>漢字<rt>よみ</rt></ruby> using hiragana readings.',
     '- Keep okurigana outside: <ruby>食<rt>た</rt></ruby>べる, not <ruby>食べ<rt>たべ</rt></ruby>る.',
     '- Group kanji compounds naturally: <ruby>夜空<rt>よぞら</rt></ruby>, not <ruby>夜<rt>よ</rt></ruby><ruby>空<rt>ぞら</rt></ruby>.',
-    '- Leave kana, punctuation, Latin letters, and numbers unchanged. Preserve blank lines and line breaks with <br>.',
+    '- Leave kana, punctuation, Latin letters, and numbers unchanged.',
     '- Pick contextually accurate readings for lyrics (including poetic/song readings when clear).',
     '- Annotate the ENTIRE input from start to finish without summarizing or stopping early.',
+  ];
+
+  const SYSTEM_PROMPT_RUBY_ONLY = [
+    'Annotate Japanese lyrics with HTML ruby tags. Return ONLY the annotated HTML, nothing else.',
+    '',
+    ...BASE_RUBY_RULES,
+    '- Preserve blank lines and line breaks with <br>.',
+  ].join('\n');
+
+  const SYSTEM_PROMPT_WITH_TRANSLATION = [
+    'Annotate Japanese lyrics with HTML ruby tags and provide a natural, poetic Simplified Chinese translation below each lyric line. Return ONLY the HTML, nothing else.',
+    '',
+    ...BASE_RUBY_RULES,
+    '- Immediately after each non-empty lyric line, output its Simplified Chinese translation on the next line wrapped in <p>中文翻译</p> (plain text inside <p>, no ruby tags inside <p>).',
+    '- Preserve blank lines between stanzas as an empty line between entries.',
+    '- Example format:',
+    '<ruby>夢<rt>ゆめ</rt></ruby>を<ruby>見<rt>み</rt></ruby>たんだ',
+    '<p>我做了一个梦</p>',
   ].join('\n');
 
   /**
@@ -58,9 +74,10 @@
    * Call an OpenAI-compatible chat completions endpoint with streaming support.
    * Invokes `onChunk(sanitizedHtml)` as tokens arrive, and returns the final sanitized HTML.
    */
-  async function annotateLyrics({ apiKey, baseUrl, model, lyrics, signal, onChunk }) {
+  async function annotateLyrics({ apiKey, baseUrl, model, lyrics, translate = true, signal, onChunk }) {
     const { sanitizeRubyHtml } = Furigana.ruby;
     const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const systemPrompt = translate ? SYSTEM_PROMPT_WITH_TRANSLATION : SYSTEM_PROMPT_RUBY_ONLY;
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -75,7 +92,7 @@
         temperature: 0.1,
         max_tokens: 16384,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: lyrics },
         ],
       }),

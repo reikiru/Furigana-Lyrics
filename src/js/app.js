@@ -8,7 +8,7 @@
     savePrefs,
   } = globalThis.Furigana.config;
   const { fetchModels, annotateLyrics } = globalThis.Furigana.api;
-  const { rubyHtmlToBracketText } = globalThis.Furigana.ruby;
+  const { renderLyricsHtml, rubyHtmlToBracketText } = globalThis.Furigana.ruby;
   const { exportRubyPng } = globalThis.Furigana.exporter;
 
   const $ = (id) => document.getElementById(id);
@@ -48,11 +48,13 @@
     charCount: $('char-count'),
     btnSample: $('btn-sample'),
     btnClear: $('btn-clear'),
+    optEnableTranslation: $('opt-enable-translation'),
     btnAnnotate: $('btn-annotate'),
     btnCancel: $('btn-cancel'),
     statusText: $('status-text'),
 
     optShowRuby: $('opt-show-ruby'),
+    optShowTranslation: $('opt-show-translation'),
     btnCopyText: $('btn-copy-text'),
     btnCopyHtml: $('btn-copy-html'),
     btnExportPng: $('btn-export-png'),
@@ -117,7 +119,7 @@
   function renderRubyOutput(html) {
     currentHtml = html;
     els.outputView.classList.remove('is-empty');
-    els.outputView.innerHTML = html;
+    els.outputView.innerHTML = renderLyricsHtml(html, { showTranslation: true });
     setOutputActionsEnabled(Boolean(html.trim()));
   }
 
@@ -231,8 +233,11 @@
       els.optBgColor.value = computedBg;
     }
 
-    els.optShowRuby.checked = prefs.showRuby;
+    els.optEnableTranslation.checked = Boolean(prefs.enableTranslation);
+    els.optShowRuby.checked = Boolean(prefs.showRuby);
     els.outputView.classList.toggle('hide-ruby', !prefs.showRuby);
+    els.optShowTranslation.checked = Boolean(prefs.showTranslation);
+    els.outputView.classList.toggle('hide-translation', !prefs.showTranslation);
 
     const collapsed = Boolean(prefs.inputCollapsed);
     els.workspace.classList.toggle('is-input-collapsed', collapsed);
@@ -284,6 +289,7 @@
         baseUrl: apiConfig.baseUrl,
         model: apiConfig.model,
         lyrics,
+        translate: Boolean(prefs.enableTranslation),
         signal: activeController.signal,
         onChunk: (partialHtml) => {
           if (partialHtml.trim()) {
@@ -438,26 +444,46 @@
     els.btnAnnotate.addEventListener('click', handleAnnotate);
     els.btnCancel.addEventListener('click', () => activeController?.abort());
 
+    els.optEnableTranslation.addEventListener('change', () => {
+      prefs = savePrefs({ ...prefs, enableTranslation: els.optEnableTranslation.checked });
+      applyPrefs();
+    });
+
     els.optShowRuby.addEventListener('change', () => {
       prefs = savePrefs({ ...prefs, showRuby: els.optShowRuby.checked });
       applyPrefs();
     });
 
+    els.optShowTranslation.addEventListener('change', () => {
+      prefs = savePrefs({ ...prefs, showTranslation: els.optShowTranslation.checked });
+      applyPrefs();
+    });
+
     els.btnCopyText.addEventListener('click', async () => {
       if (!currentHtml) return;
-      await navigator.clipboard.writeText(rubyHtmlToBracketText(currentHtml));
-      showToast('已复制括号注音文本');
+      const text = rubyHtmlToBracketText(currentHtml, {
+        showTranslation: Boolean(prefs.showTranslation),
+      });
+      await navigator.clipboard.writeText(text);
+      showToast('已复制注音文本');
     });
 
     els.btnCopyHtml.addEventListener('click', async () => {
       if (!currentHtml) return;
-      await navigator.clipboard.writeText(currentHtml);
+      const html = renderLyricsHtml(currentHtml, {
+        showTranslation: Boolean(prefs.showTranslation),
+      });
+      await navigator.clipboard.writeText(html);
       showToast('已复制 Ruby HTML');
     });
 
     els.btnExportPng.addEventListener('click', () => {
       try {
-        exportRubyPng(els.outputView, { showRuby: prefs.showRuby });
+        exportRubyPng(els.outputView, {
+          rawHtml: currentHtml,
+          showRuby: Boolean(prefs.showRuby),
+          showTranslation: Boolean(prefs.showTranslation),
+        });
         showToast('正在导出高清 PNG…');
       } catch (err) {
         setStatus(err.message, 'error');

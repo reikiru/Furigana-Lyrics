@@ -476,6 +476,36 @@ textarea {
   opacity: 1;
 }
 
+.lyric-entry {
+  margin-bottom: 0.25em;
+}
+
+.lyric-jp {
+  line-height: var(--lyrics-line-height);
+}
+
+.lyric-trans {
+  margin-top: -0.35em;
+  margin-bottom: 0.45em;
+  font-family: var(--font-ui);
+  font-size: 0.72em;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.lyric-blank {
+  height: 1em;
+}
+
+.ruby-canvas.hide-translation .lyric-trans {
+  display: none;
+}
+
+.ruby-canvas.hide-translation .lyric-entry {
+  margin-bottom: 0;
+}
+
 /* Dialog Modal */
 .modal {
   margin: auto;

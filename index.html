@@ -79,6 +79,10 @@
       <div class="pane-foot">
         <div class="foot-status" id="status-text">就绪</div>
         <div class="foot-actions">
+          <label class="toggle-ruby" title="标注假名时同时生成中文歌词翻译">
+            <input type="checkbox" id="opt-enable-translation" checked>
+            <span>翻译歌词</span>
+          </label>
           <button type="button" class="btn-secondary" id="btn-cancel" hidden>停止</button>
           <button type="button" class="btn-primary" id="btn-annotate">
             <span class="btn-label">标注假名</span>
@@ -99,6 +103,10 @@
           <label class="toggle-ruby" title="切换假名显示，方便自测读音">
             <input type="checkbox" id="opt-show-ruby" checked>
             <span>显示假名</span>
+          </label>
+          <label class="toggle-ruby" title="切换歌词中文翻译显示">
+            <input type="checkbox" id="opt-show-translation" checked>
+            <span>显示翻译</span>
           </label>
           <button type="button" class="text-btn" id="btn-copy-text" disabled>复制文本</button>
           <button type="button" class="text-btn" id="btn-copy-html" disabled>复制 HTML</button>
