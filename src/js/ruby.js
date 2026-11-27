@@ -208,6 +208,57 @@
       .join('\n');
   }
 
+  /**
+   * Parse line-numbered translation output (e.g. `[1] 译文` or `1. 译文`) into a 1-based map.
+   */
+  function parseNumberedTranslations(raw) {
+    const cleaned = stripCodeFence(raw || '');
+    const map = {};
+    for (const line of cleaned.replace(/\r\n/g, '\n').split('\n')) {
+      const match = line.match(/^\s*\[?(\d+)\]?[\s.:：\-—、)]+(.+)$/);
+      if (!match) continue;
+      const idx = Number(match[1]);
+      const text = match[2].trim();
+      if (idx > 0 && text) {
+        map[idx] = text;
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Merge sanitized ruby-only HTML with a 1-based map of translated lines,
+   * preserving stanza blanks and outputting canonical `<p>` translation lines.
+   */
+  function mergeRubyWithTranslations(rubyHtml, translations = {}) {
+    const blocks = parseLyricsBlocks(rubyHtml);
+    let lineIndex = 0;
+    const out = [];
+
+    for (const block of blocks) {
+      if (block.type === 'blank') {
+        out.push('');
+        continue;
+      }
+      lineIndex += 1;
+      const jpHtml = block.segments
+        .map((seg) =>
+          seg.type === 'ruby'
+            ? `<ruby>${escapeHtml(seg.base)}<rt>${escapeHtml(seg.rt)}</rt></ruby>`
+            : escapeHtml(seg.text)
+        )
+        .join('');
+      const trans = translations[lineIndex] || block.translation || '';
+      if (trans) {
+        out.push(`${jpHtml}\n<p>${escapeHtml(trans)}</p>`);
+      } else {
+        out.push(jpHtml);
+      }
+    }
+
+    return out.join('\n');
+  }
+
   Furigana.ruby = {
     stripCodeFence,
     sanitizeRubyHtml,
@@ -215,5 +266,7 @@
     parseLyricsBlocks,
     renderLyricsHtml,
     rubyHtmlToBracketText,
+    parseNumberedTranslations,
+    mergeRubyWithTranslations,
   };
 })();

@@ -9,6 +9,8 @@ const {
   parseLyricsBlocks,
   renderLyricsHtml,
   rubyHtmlToBracketText,
+  parseNumberedTranslations,
+  mergeRubyWithTranslations,
 } = globalThis.Furigana.ruby;
 
 test('stripCodeFence removes markdown html fences', () => {
@@ -124,4 +126,49 @@ test('renderLyricsHtml builds structured DOM HTML and respects showTranslation',
     renderLyricsHtml(html, { showTranslation: false }),
     '<div class="lyric-entry"><div class="lyric-jp"><ruby>夢<rt>ゆめ</rt></ruby></div></div><div class="lyric-blank" aria-hidden="true"></div><div class="lyric-entry"><div class="lyric-jp"><ruby>星<rt>ほし</rt></ruby></div></div>'
   );
+});
+
+test('parseNumberedTranslations extracts line-indexed translations from various formats', () => {
+  const raw = '```\n[1] 试着活到了今天\n2. 只是影子越拉越长\n\n3：离别终究会来\n```';
+  assert.deepEqual(parseNumberedTranslations(raw), {
+    1: '试着活到了今天',
+    2: '只是影子越拉越长',
+    3: '离别终究会来',
+  });
+});
+
+test('mergeRubyWithTranslations aligns numbered translations with ruby lines and stanza blanks', () => {
+  const rubyHtml = '<ruby>今日<rt>きょう</rt></ruby>まで<br><ruby>僕<rt>ぼく</rt></ruby>の<ruby>影<rt>かげ</rt></ruby><br><br><ruby>別<rt>わか</rt></ruby>れは';
+  const merged = mergeRubyWithTranslations(rubyHtml, {
+    1: '试着活到了今天',
+    2: '只是影子越拉越长',
+  });
+  assert.deepEqual(parseLyricsBlocks(merged), [
+    {
+      type: 'lyric',
+      segments: [
+        { type: 'ruby', base: '今日', rt: 'きょう' },
+        { type: 'text', text: 'まで' },
+      ],
+      translation: '试着活到了今天',
+    },
+    {
+      type: 'lyric',
+      segments: [
+        { type: 'ruby', base: '僕', rt: 'ぼく' },
+        { type: 'text', text: 'の' },
+        { type: 'ruby', base: '影', rt: 'かげ' },
+      ],
+      translation: '只是影子越拉越长',
+    },
+    { type: 'blank' },
+    {
+      type: 'lyric',
+      segments: [
+        { type: 'ruby', base: '別', rt: 'わか' },
+        { type: 'text', text: 'れは' },
+      ],
+      translation: '',
+    },
+  ]);
 });

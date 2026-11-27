@@ -17,32 +17,44 @@
     '- Preserve blank lines and line breaks with <br>.',
   ].join('\n');
 
-  const TRANSLATION_STYLE_INSTRUCTIONS = {
+  const TRANSLATION_PROMPTS = {
     natural: [
-      '- Read the full stanza and song context before translating so sentences split across multiple lines flow naturally and cohesively.',
-      '- Translate into idiomatic, fluent, emotionally resonant Simplified Chinese suitable for song lyrics; prioritize natural expression, imagery, and rhythm over stiff word-for-word literal phrasing.',
-    ],
+      '你是一位精通日文歌曲与汉语诗意表达的专业歌词译者。请先通读整首歌词，理解全曲情绪、意象与跨行长句的上下文，再将其翻译为自然流畅、富有歌词美感的简体中文。',
+      '',
+      '翻译原则：',
+      '- 避免机械翻译腔：遵循汉语意合习惯，自然省略冗余主语与代词，切忌在相邻两句里重复堆砌「我」「你」「这」「那」。',
+      '- 避免生硬连接词与书面客套话：不要动辄机械翻出「虽然…」「尽管…」「明明…」「但是…」，也不要把歌词翻成公文或客套腔（例如避免「实在万分抱歉」这类表达）。',
+      '- 保持重复句与段落呼应：歌词中反复吟唱或呼应的句子，译文应保持节奏与意象的呼应，不要强行换词凑数。',
+      '- 兼顾跨行连贯与逐行对齐：跨行长句可在语义上前后贯通，同时仍按原行拆分成对应的中文行。',
+      '- 严格按输入编号输出：每行格式为 `[编号] 中文译文`（例如 `[1] 试着活到了今天`），编号数量必须与输入完全一致；只输出编号与中文译文，不要输出日文原文、解释说明或 Markdown 代码块。',
+    ].join('\n'),
     literal: [
-      '- Provide a faithful, line-by-line literal Simplified Chinese translation that closely preserves the original Japanese wording, structure, and clause correspondence for language learners.',
-    ],
+      '你是一位严谨的日语教学译者。请将以下带编号的日语歌词逐句直译为简体中文，尽量贴近原文词序、语法结构与字面含义，方便日语学习者逐句对照。',
+      '',
+      '- 严格按输入编号输出：每行格式为 `[编号] 中文译文`，编号数量必须与输入完全一致；只输出编号与中文译文，不要输出日文原文、解释说明或 Markdown 代码块。',
+    ].join('\n'),
   };
 
-  function buildSystemPrompt({ translate = true, translationStyle = 'natural' } = {}) {
-    if (!translate) return SYSTEM_PROMPT_RUBY_ONLY;
+  function buildSystemPrompt() {
+    return SYSTEM_PROMPT_RUBY_ONLY;
+  }
 
-    const styleKey = translationStyle === 'literal' ? 'literal' : 'natural';
-    const styleRules = TRANSLATION_STYLE_INSTRUCTIONS[styleKey];
-    return [
-      'Annotate Japanese lyrics with HTML ruby tags and provide a Simplified Chinese translation below each lyric line. Return ONLY the HTML, nothing else.',
-      '',
-      ...BASE_RUBY_RULES,
-      ...styleRules,
-      '- Immediately after each non-empty lyric line, output its Simplified Chinese translation on the next line wrapped in <p>中文翻译</p> (plain text inside <p>, no ruby tags inside <p>).',
-      '- Preserve blank lines between stanzas as an empty line between entries.',
-      '- Example format:',
-      '<ruby>夢<rt>ゆめ</rt></ruby>を<ruby>見<rt>み</rt></ruby>たんだ',
-      '<p>曾做过一场梦</p>',
-    ].join('\n');
+  function buildTranslationPrompt(translationStyle = 'natural') {
+    const key = translationStyle === 'literal' ? 'literal' : 'natural';
+    return TRANSLATION_PROMPTS[key];
+  }
+
+  function formatNumberedLyrics(lyrics) {
+    let idx = 0;
+    return lyrics
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => {
+        if (line.trim() === '') return '';
+        idx += 1;
+        return `[${idx}] ${line.trim()}`;
+      })
+      .join('\n');
   }
 
   /**
@@ -88,23 +100,19 @@
   }
 
   /**
-   * Call an OpenAI-compatible chat completions endpoint with streaming support.
-   * Invokes `onChunk(sanitizedHtml)` as tokens arrive, and returns the final sanitized HTML.
+   * Stream a single OpenAI-compatible chat completion and return the raw accumulated text.
    */
-  async function annotateLyrics({
+  async function streamChatCompletion({
     apiKey,
     baseUrl,
     model,
-    lyrics,
-    translate = true,
-    translationStyle = 'natural',
+    systemPrompt,
+    userContent,
+    temperature,
     signal,
-    onChunk,
+    onRawChunk,
   }) {
-    const { sanitizeRubyHtml } = Furigana.ruby;
     const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const systemPrompt = buildSystemPrompt({ translate, translationStyle });
-    const temperature = translate && translationStyle !== 'literal' ? 0.3 : 0.1;
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -120,7 +128,7 @@
         max_tokens: 16384,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: lyrics },
+          { role: 'user', content: userContent },
         ],
       }),
     });
@@ -145,9 +153,9 @@
       if (choice?.finish_reason === 'length') {
         throw new Error('输出达到长度上限，请将歌词分段后重试。');
       }
-      const finalHtml = sanitizeRubyHtml(choice?.message?.content || '');
-      onChunk?.(finalHtml);
-      return finalHtml;
+      const raw = choice?.message?.content || '';
+      onRawChunk?.(raw);
+      return raw;
     }
 
     const reader = response.body.getReader();
@@ -177,7 +185,7 @@
           const delta = choice?.delta?.content;
           if (delta) {
             rawAccumulated += delta;
-            onChunk?.(sanitizeRubyHtml(rawAccumulated));
+            onRawChunk?.(rawAccumulated);
           }
         } catch {
           // Ignore malformed partial SSE frames
@@ -189,10 +197,97 @@
       throw new Error('输出达到长度上限，请将歌词分段后重试。');
     }
 
-    const finalHtml = sanitizeRubyHtml(rawAccumulated);
+    onRawChunk?.(rawAccumulated);
+    return rawAccumulated;
+  }
+
+  /**
+   * Annotate Japanese lyrics with ruby tags, and optionally run a parallel holistic
+   * Simplified Chinese translation request that merges line-by-line into the ruby HTML.
+   */
+  async function annotateLyrics({
+    apiKey,
+    baseUrl,
+    model,
+    lyrics,
+    translate = true,
+    translationStyle = 'natural',
+    signal,
+    onChunk,
+  }) {
+    const {
+      sanitizeRubyHtml,
+      parseNumberedTranslations,
+      mergeRubyWithTranslations,
+    } = Furigana.ruby;
+
+    if (!translate) {
+      const rawRuby = await streamChatCompletion({
+        apiKey,
+        baseUrl,
+        model,
+        systemPrompt: buildSystemPrompt(),
+        userContent: lyrics,
+        temperature: 0.1,
+        signal,
+        onRawChunk: (raw) => onChunk?.(sanitizeRubyHtml(raw)),
+      });
+      const finalHtml = sanitizeRubyHtml(rawRuby);
+      onChunk?.(finalHtml);
+      return finalHtml;
+    }
+
+    let latestRubyHtml = '';
+    let latestTranslations = {};
+
+    const emitMerged = () => {
+      if (!latestRubyHtml.trim()) return;
+      onChunk?.(mergeRubyWithTranslations(latestRubyHtml, latestTranslations));
+    };
+
+    const transTemperature = translationStyle === 'literal' ? 0.15 : 0.55;
+
+    const rubyPromise = streamChatCompletion({
+      apiKey,
+      baseUrl,
+      model,
+      systemPrompt: buildSystemPrompt(),
+      userContent: lyrics,
+      temperature: 0.1,
+      signal,
+      onRawChunk: (raw) => {
+        latestRubyHtml = sanitizeRubyHtml(raw);
+        emitMerged();
+      },
+    });
+
+    const transPromise = streamChatCompletion({
+      apiKey,
+      baseUrl,
+      model,
+      systemPrompt: buildTranslationPrompt(translationStyle),
+      userContent: formatNumberedLyrics(lyrics),
+      temperature: transTemperature,
+      signal,
+      onRawChunk: (raw) => {
+        latestTranslations = parseNumberedTranslations(raw);
+        emitMerged();
+      },
+    });
+
+    const [rawRuby, rawTrans] = await Promise.all([rubyPromise, transPromise]);
+    const finalRuby = sanitizeRubyHtml(rawRuby);
+    const finalTrans = parseNumberedTranslations(rawTrans);
+    const finalHtml = mergeRubyWithTranslations(finalRuby, finalTrans);
     onChunk?.(finalHtml);
     return finalHtml;
   }
 
-  Furigana.api = { fetchModels, annotateLyrics, buildSystemPrompt };
+  Furigana.api = {
+    fetchModels,
+    annotateLyrics,
+    buildSystemPrompt,
+    buildTranslationPrompt,
+    formatNumberedLyrics,
+  };
 })();
