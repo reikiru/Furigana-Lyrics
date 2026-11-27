@@ -20,6 +20,7 @@
     showRuby: true,
     enableTranslation: true,
     showTranslation: true,
+    translationStyle: 'natural',
     inputCollapsed: false,
   };
 

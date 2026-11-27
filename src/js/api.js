@@ -17,16 +17,33 @@
     '- Preserve blank lines and line breaks with <br>.',
   ].join('\n');
 
-  const SYSTEM_PROMPT_WITH_TRANSLATION = [
-    'Annotate Japanese lyrics with HTML ruby tags and provide a natural, poetic Simplified Chinese translation below each lyric line. Return ONLY the HTML, nothing else.',
-    '',
-    ...BASE_RUBY_RULES,
-    '- Immediately after each non-empty lyric line, output its Simplified Chinese translation on the next line wrapped in <p>中文翻译</p> (plain text inside <p>, no ruby tags inside <p>).',
-    '- Preserve blank lines between stanzas as an empty line between entries.',
-    '- Example format:',
-    '<ruby>夢<rt>ゆめ</rt></ruby>を<ruby>見<rt>み</rt></ruby>たんだ',
-    '<p>我做了一个梦</p>',
-  ].join('\n');
+  const TRANSLATION_STYLE_INSTRUCTIONS = {
+    natural: [
+      '- Read the full stanza and song context before translating so sentences split across multiple lines flow naturally and cohesively.',
+      '- Translate into idiomatic, fluent, emotionally resonant Simplified Chinese suitable for song lyrics; prioritize natural expression, imagery, and rhythm over stiff word-for-word literal phrasing.',
+    ],
+    literal: [
+      '- Provide a faithful, line-by-line literal Simplified Chinese translation that closely preserves the original Japanese wording, structure, and clause correspondence for language learners.',
+    ],
+  };
+
+  function buildSystemPrompt({ translate = true, translationStyle = 'natural' } = {}) {
+    if (!translate) return SYSTEM_PROMPT_RUBY_ONLY;
+
+    const styleKey = translationStyle === 'literal' ? 'literal' : 'natural';
+    const styleRules = TRANSLATION_STYLE_INSTRUCTIONS[styleKey];
+    return [
+      'Annotate Japanese lyrics with HTML ruby tags and provide a Simplified Chinese translation below each lyric line. Return ONLY the HTML, nothing else.',
+      '',
+      ...BASE_RUBY_RULES,
+      ...styleRules,
+      '- Immediately after each non-empty lyric line, output its Simplified Chinese translation on the next line wrapped in <p>中文翻译</p> (plain text inside <p>, no ruby tags inside <p>).',
+      '- Preserve blank lines between stanzas as an empty line between entries.',
+      '- Example format:',
+      '<ruby>夢<rt>ゆめ</rt></ruby>を<ruby>見<rt>み</rt></ruby>たんだ',
+      '<p>曾做过一场梦</p>',
+    ].join('\n');
+  }
 
   /**
    * Fetch available model IDs from an OpenAI-compatible `/models` endpoint (e.g. DeepSeek API).
@@ -74,10 +91,20 @@
    * Call an OpenAI-compatible chat completions endpoint with streaming support.
    * Invokes `onChunk(sanitizedHtml)` as tokens arrive, and returns the final sanitized HTML.
    */
-  async function annotateLyrics({ apiKey, baseUrl, model, lyrics, translate = true, signal, onChunk }) {
+  async function annotateLyrics({
+    apiKey,
+    baseUrl,
+    model,
+    lyrics,
+    translate = true,
+    translationStyle = 'natural',
+    signal,
+    onChunk,
+  }) {
     const { sanitizeRubyHtml } = Furigana.ruby;
     const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const systemPrompt = translate ? SYSTEM_PROMPT_WITH_TRANSLATION : SYSTEM_PROMPT_RUBY_ONLY;
+    const systemPrompt = buildSystemPrompt({ translate, translationStyle });
+    const temperature = translate && translationStyle !== 'literal' ? 0.3 : 0.1;
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -89,7 +116,7 @@
       body: JSON.stringify({
         model,
         stream: true,
-        temperature: 0.1,
+        temperature,
         max_tokens: 16384,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -167,5 +194,5 @@
     return finalHtml;
   }
 
-  Furigana.api = { fetchModels, annotateLyrics };
+  Furigana.api = { fetchModels, annotateLyrics, buildSystemPrompt };
 })();

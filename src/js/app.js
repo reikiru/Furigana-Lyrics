@@ -39,6 +39,7 @@
     cfgModelSelect: $('cfg-model-select'),
     cfgModelCustom: $('cfg-model-custom'),
     modelFetchStatus: $('model-fetch-status'),
+    cfgTranslationStyle: $('cfg-translation-style'),
 
     workspace: $('workspace'),
     btnCollapseInput: $('btn-collapse-input'),
@@ -247,6 +248,7 @@
   function openApiModal() {
     els.cfgBaseUrl.value = apiConfig.baseUrl;
     els.cfgApiKey.value = apiConfig.apiKey;
+    els.cfgTranslationStyle.value = prefs.translationStyle === 'literal' ? 'literal' : 'natural';
     modalModels = [...apiConfig.models];
     renderModelOptions(modalModels, apiConfig.model);
 
@@ -290,6 +292,7 @@
         model: apiConfig.model,
         lyrics,
         translate: Boolean(prefs.enableTranslation),
+        translationStyle: prefs.translationStyle || 'natural',
         signal: activeController.signal,
         onChunk: (partialHtml) => {
           if (partialHtml.trim()) {
@@ -393,12 +396,15 @@
         return;
       }
 
+      const translationStyle =
+        els.cfgTranslationStyle.value === 'literal' ? 'literal' : 'natural';
       apiConfig = saveApiConfig({
         apiKey,
         model,
         baseUrl: els.cfgBaseUrl.value,
         models: modalModels,
       });
+      prefs = savePrefs({ ...prefs, translationStyle });
       updateApiIndicator();
       els.apiModal.close();
       showToast(`已保存设置（${apiConfig.model}）`);

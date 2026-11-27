@@ -159,6 +159,15 @@
           </div>
           <p class="field-hint" id="model-fetch-status">填写 API Key 后点击「拉取可用模型」，自动从官方接口同步最新模型列表。</p>
         </div>
+
+        <div class="field">
+          <label for="cfg-translation-style">翻译风格</label>
+          <select id="cfg-translation-style">
+            <option value="natural">自然意译（默认，结合语境更流畅自然）</option>
+            <option value="literal">逐句直译（贴近原文词序，适合日语学习）</option>
+          </select>
+          <p class="field-hint">控制开启「翻译歌词」时大模型使用的译文风格。</p>
+        </div>
       </div>
 
       <div class="modal-foot">
